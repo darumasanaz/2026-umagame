@@ -26,20 +26,26 @@ const defaultRecipient = {
   message: 'ぴったり達成！素敵な一年をお過ごしください。'
 };
 
+const MAX_STAMINA = 100;
+const STAMINA_DECAY_RATE = 0.15;
+const JUMP_STAMINA_COST = 2;
+const CARROT_RECOVERY = 20;
+const MONEY_PROBABILITY = 0.75; // chance to spawn money instead of carrot
+
 let currentRecipient = defaultRecipient;
 let gameState = 'playing'; // 'playing' | 'gameover' | 'cleared'
 let horse;
 let groundY;
-let obstacles = [];
 let items = [];
 let frameCount = 0;
 let totalAmount = 0;
-let clearReady = false;
-let obstacleTimer = 0;
 let itemTimer = 0;
 let finalMessage = '';
+let stamina = MAX_STAMINA;
 
 const moneyColors = ['#f4b400', '#f0932b', '#d35400'];
+const carrotBodyColor = '#ff8c42';
+const carrotLeafColor = '#4caf50';
 
 function resizeCanvas() {
   const rect = canvas.getBoundingClientRect();
@@ -69,7 +75,9 @@ function initHorse() {
     vy: 0,
     gravity: canvas.height * 0.0025,
     jumpForce: canvas.height * 0.04,
-    onGround: true
+    onGround: true,
+    jumpCount: 0,
+    maxJumps: 2
   };
 }
 
@@ -77,12 +85,10 @@ function resetGame() {
   gameState = 'playing';
   frameCount = 0;
   totalAmount = 0;
-  clearReady = false;
-  obstacleTimer = 60;
   itemTimer = 90;
-  obstacles = [];
   items = [];
   finalMessage = '';
+  stamina = MAX_STAMINA;
   initHorse();
 }
 
@@ -101,7 +107,7 @@ function handleKeyDown(e) {
   if (e.code === 'Space' || e.code === 'ArrowUp') {
     if (gameState === 'playing') {
       jump();
-    } else if (gameState === 'gameover') {
+    } else if (gameState === 'gameover' || gameState === 'cleared') {
       resetGame();
     }
   }
@@ -114,16 +120,17 @@ function handlePointer(e) {
   }
   if (gameState === 'playing') {
     jump();
-  } else if (gameState === 'gameover') {
+  } else if (gameState === 'gameover' || gameState === 'cleared') {
     resetGame();
   }
 }
 
 function jump() {
-  if (horse.onGround) {
-    horse.vy = -horse.jumpForce;
-    horse.onGround = false;
-  }
+  if (horse.jumpCount >= horse.maxJumps || stamina <= 0) return;
+  horse.vy = -horse.jumpForce;
+  horse.onGround = false;
+  horse.jumpCount += 1;
+  stamina = Math.max(0, stamina - JUMP_STAMINA_COST);
 }
 
 function updateHorse() {
@@ -133,64 +140,8 @@ function updateHorse() {
     horse.y = groundY - horse.height;
     horse.vy = 0;
     horse.onGround = true;
+    horse.jumpCount = 0;
   }
-}
-
-function spawnObstacle() {
-  const typeRand = Math.random();
-  const baseSpeed = canvas.width * 0.005 + 4;
-  let obstacle;
-  if (typeRand < 0.4) {
-    const width = canvas.width * 0.05;
-    const height = canvas.height * 0.25;
-    obstacle = {
-      type: 'kadomatsu',
-      x: canvas.width + width,
-      y: groundY - height,
-      width,
-      height,
-      speed: baseSpeed
-    };
-  } else if (typeRand < 0.65) {
-    const width = canvas.width * 0.06;
-    const height = canvas.height * 0.08;
-    obstacle = {
-      type: 'hane',
-      x: canvas.width + width,
-      y: groundY - horse.height * 0.7,
-      width,
-      height,
-      speed: baseSpeed + 1
-    };
-  } else if (typeRand < 0.9) {
-    const width = canvas.width * 0.08;
-    const height = canvas.height * 0.12;
-    const baseY = groundY - horse.height * 0.6;
-    obstacle = {
-      type: 'tai',
-      x: canvas.width + width,
-      y: baseY,
-      width,
-      height,
-      baseY,
-      amplitude: horse.height,
-      angle: 0,
-      waveSpeed: 0.08 + Math.random() * 0.1,
-      speed: baseSpeed
-    };
-  } else {
-    const width = canvas.width * 0.12;
-    const height = canvas.height * 0.55;
-    obstacle = {
-      type: 'torii',
-      x: canvas.width + width,
-      y: groundY - height,
-      width,
-      height,
-      speed: baseSpeed - 1
-    };
-  }
-  obstacles.push(obstacle);
 }
 
 function spawnItem() {
@@ -198,8 +149,10 @@ function spawnItem() {
   const height = canvas.height * 0.08;
   const baseY = groundY - height - Math.random() * horse.height;
   const values = [5, 50, 100, 500, 1000];
-  const value = values[Math.floor(Math.random() * values.length)];
+  const type = Math.random() < MONEY_PROBABILITY ? 'money' : 'carrot';
+  const value = type === 'money' ? values[Math.floor(Math.random() * values.length)] : 0;
   items.push({
+    type,
     x: canvas.width + width,
     y: baseY,
     width,
@@ -208,50 +161,6 @@ function spawnItem() {
     speed: canvas.width * 0.004 + 3
   });
 }
-
-function updateObstacles() {
-  obstacleTimer--;
-  if (obstacleTimer <= 0) {
-    spawnObstacle();
-    obstacleTimer = 90 + Math.random() * 70;
-  }
-
-  obstacles = obstacles.filter((obstacle) => {
-    obstacle.x -= obstacle.speed;
-    if (obstacle.type === 'tai') {
-      obstacle.angle += obstacle.waveSpeed;
-      const minY = groundY - horse.height * 1.1;
-      const maxY = groundY - obstacle.height - horse.height * 0.1;
-      obstacle.y = obstacle.baseY + Math.sin(obstacle.angle) * obstacle.amplitude;
-      obstacle.y = Math.max(minY, Math.min(obstacle.y, maxY));
-    }
-
-    if (obstacle.x + obstacle.width < 0) {
-      return false;
-    }
-
-    if (checkCollision(horse, obstacle)) {
-      if (obstacle.type === 'torii') {
-        resolveToriiCollision();
-      } else {
-        gameState = 'gameover';
-        finalMessage = '';
-      }
-      return false;
-    }
-    return true;
-  });
-}
-
-  function resolveToriiCollision() {
-    if (clearReady && totalAmount === currentRecipient.targetAmount) {
-      gameState = 'cleared';
-      finalMessage = currentRecipient.message;
-    } else {
-      gameState = 'gameover';
-      finalMessage = 'まだ目標額に届いていません！お年玉を集め直しましょう。';
-    }
-  }
 
 function updateItems() {
   if (gameState !== 'playing') return;
@@ -267,11 +176,17 @@ function updateItems() {
     if (item.x + item.width < 0) return false;
 
     if (checkCollision(horse, item)) {
-      totalAmount += item.value;
-      if (totalAmount === currentRecipient.targetAmount) {
-        clearReady = true;
-      } else if (totalAmount > currentRecipient.targetAmount) {
-        clearReady = false;
+      if (item.type === 'money') {
+        totalAmount += item.value;
+        if (totalAmount === currentRecipient.targetAmount) {
+          gameState = 'cleared';
+          finalMessage = currentRecipient.message;
+        } else if (totalAmount > currentRecipient.targetAmount) {
+          gameState = 'gameover';
+          finalMessage = 'お金を集めすぎてしまいました…。また挑戦してみてください。';
+        }
+      } else if (item.type === 'carrot') {
+        stamina = Math.min(MAX_STAMINA, stamina + CARROT_RECOVERY);
       }
       return false;
     }
@@ -284,8 +199,14 @@ function update() {
 
   frameCount++;
 
+  stamina = Math.max(0, stamina - STAMINA_DECAY_RATE);
+  if (stamina <= 0) {
+    gameState = 'gameover';
+    finalMessage = '馬がバテてしまいました…。次は体力に気をつけて挑戦してみてください。';
+    return;
+  }
+
   updateHorse();
-  updateObstacles();
   updateItems();
 }
 
@@ -314,71 +235,28 @@ function drawHorse() {
   ctx.restore();
 }
 
-function drawObstacles() {
-  obstacles.forEach((obstacle) => {
-    ctx.save();
-    switch (obstacle.type) {
-      case 'kadomatsu':
-        ctx.fillStyle = '#2d8659';
-        ctx.fillRect(obstacle.x, obstacle.y, obstacle.width, obstacle.height);
-        ctx.fillStyle = '#c47b28';
-        ctx.fillRect(
-          obstacle.x + obstacle.width * 0.15,
-          obstacle.y + obstacle.height * 0.8,
-          obstacle.width * 0.7,
-          obstacle.height * 0.2
-        );
-        break;
-      case 'hane':
-        ctx.fillStyle = '#f25477';
-        ctx.fillRect(obstacle.x, obstacle.y, obstacle.width, obstacle.height);
-        ctx.fillStyle = '#fff';
-        ctx.fillRect(
-          obstacle.x + obstacle.width * 0.2,
-          obstacle.y + obstacle.height * 0.15,
-          obstacle.width * 0.6,
-          obstacle.height * 0.2
-        );
-        break;
-      case 'tai':
-        ctx.fillStyle = '#ff6b6b';
-        ctx.fillRect(obstacle.x, obstacle.y, obstacle.width, obstacle.height);
-        ctx.fillStyle = '#fff';
-        ctx.fillRect(
-          obstacle.x + obstacle.width * 0.7,
-          obstacle.y + obstacle.height * 0.3,
-          obstacle.width * 0.2,
-          obstacle.height * 0.2
-        );
-        break;
-      case 'torii':
-        ctx.fillStyle = '#b71c1c';
-        ctx.fillRect(obstacle.x, obstacle.y, obstacle.width, obstacle.height);
-        ctx.fillStyle = '#3e2723';
-        ctx.fillRect(
-          obstacle.x - obstacle.width * 0.1,
-          obstacle.y - obstacle.height * 0.05,
-          obstacle.width * 1.2,
-          obstacle.height * 0.15
-        );
-        break;
-      default:
-        break;
-    }
-    ctx.restore();
-  });
-}
-
 function drawItems() {
   items.forEach((item) => {
     ctx.save();
-    ctx.fillStyle = moneyColors[item.value % moneyColors.length];
-    ctx.fillRect(item.x, item.y, item.width, item.height);
-    ctx.fillStyle = '#fff';
-    ctx.font = `${Math.max(12, canvas.height * 0.03)}px sans-serif`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(item.value, item.x + item.width / 2, item.y + item.height / 2);
+    if (item.type === 'money') {
+      ctx.fillStyle = moneyColors[item.value % moneyColors.length];
+      ctx.fillRect(item.x, item.y, item.width, item.height);
+      ctx.fillStyle = '#fff';
+      ctx.font = `${Math.max(12, canvas.height * 0.03)}px sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(item.value, item.x + item.width / 2, item.y + item.height / 2);
+    } else {
+      ctx.fillStyle = carrotBodyColor;
+      ctx.beginPath();
+      ctx.moveTo(item.x, item.y + item.height);
+      ctx.lineTo(item.x + item.width / 2, item.y);
+      ctx.lineTo(item.x + item.width, item.y + item.height);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = carrotLeafColor;
+      ctx.fillRect(item.x + item.width * 0.35, item.y - item.height * 0.2, item.width * 0.3, item.height * 0.2);
+    }
     ctx.restore();
   });
 }
@@ -390,11 +268,20 @@ function drawHUD() {
   const margin = 24;
   ctx.fillText(`MONEY: ${totalAmount}円`, canvas.width - margin, 40);
   ctx.fillText(`TARGET: ${currentRecipient.targetAmount}円`, canvas.width - margin, 80);
-  if (clearReady) {
-    ctx.fillStyle = '#d35b1f';
-    ctx.textAlign = 'left';
-    ctx.fillText('鳥居に入れば円満クリア！', 20, 120);
-  }
+  ctx.textAlign = 'right';
+  const staminaRatio = Math.max(0, stamina) / MAX_STAMINA;
+  const staminaPercent = Math.round(staminaRatio * 100);
+  ctx.fillText(`STAMINA: ${staminaPercent}%`, canvas.width - margin, 120);
+
+  const barWidth = canvas.width * 0.25;
+  const barHeight = 16;
+  const barX = canvas.width - margin - barWidth;
+  const barY = 140;
+  ctx.strokeStyle = '#222';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(barX, barY, barWidth, barHeight);
+  ctx.fillStyle = '#4caf50';
+  ctx.fillRect(barX, barY, barWidth * staminaRatio, barHeight);
 }
 
 function drawOverlay(title, body) {
@@ -414,12 +301,12 @@ function drawOverlay(title, body) {
 function draw() {
   drawBackground();
   drawHorse();
-  drawObstacles();
   drawItems();
   drawHUD();
 
   if (gameState === 'gameover') {
-    drawOverlay('GAME OVER', [`集めた金額: ${totalAmount}円`, 'Tap or Press Space to Retry']);
+    const message = finalMessage || `集めた金額: ${totalAmount}円`;
+    drawOverlay('GAME OVER', [message, 'Tap or Press Space to Retry']);
   } else if (gameState === 'cleared') {
     const subtext = finalMessage || 'あけましておめでとうございます。今年もよろしくお願いします。';
     drawOverlay('おつかれさまでした！', [subtext]);
@@ -444,3 +331,8 @@ function checkCollision(a, b) {
 }
 
 start();
+
+// Changes summary:
+// - Added stamina system with decay/recovery plus double jump logic in jump(), updateHorse(), and update().
+// - Replaced obstacle rules with money/carrot item handling in spawnItem(), updateItems(), and drawItems().
+// - Updated HUD, overlays, and input handlers to support new win/lose conditions and retry flow.
