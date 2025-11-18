@@ -33,7 +33,6 @@ let groundY;
 let obstacles = [];
 let items = [];
 let frameCount = 0;
-let score = 0;
 let totalAmount = 0;
 let clearReady = false;
 let obstacleTimer = 0;
@@ -77,7 +76,6 @@ function initHorse() {
 function resetGame() {
   gameState = 'playing';
   frameCount = 0;
-  score = 0;
   totalAmount = 0;
   clearReady = false;
   obstacleTimer = 60;
@@ -285,7 +283,6 @@ function update() {
   if (gameState !== 'playing') return;
 
   frameCount++;
-  score = Math.floor(frameCount / 2);
 
   updateHorse();
   updateObstacles();
@@ -389,11 +386,10 @@ function drawItems() {
 function drawHUD() {
   ctx.fillStyle = '#222';
   ctx.font = `${Math.max(16, canvas.height * 0.04)}px 'Noto Sans JP', sans-serif`;
-  ctx.textAlign = 'left';
-  ctx.fillText(`MONEY: ${totalAmount}円`, 20, 40);
-  ctx.fillText(`TARGET: ${currentRecipient.targetAmount}円`, 20, 80);
   ctx.textAlign = 'right';
-  ctx.fillText(`SCORE: ${score}`, canvas.width - 20, 40);
+  const margin = 24;
+  ctx.fillText(`MONEY: ${totalAmount}円`, canvas.width - margin, 40);
+  ctx.fillText(`TARGET: ${currentRecipient.targetAmount}円`, canvas.width - margin, 80);
   if (clearReady) {
     ctx.fillStyle = '#d35b1f';
     ctx.textAlign = 'left';
