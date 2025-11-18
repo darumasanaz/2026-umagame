@@ -245,15 +245,15 @@ function updateObstacles() {
   });
 }
 
-function resolveToriiCollision() {
-  if (totalAmount === currentRecipient.targetAmount && clearReady) {
-    gameState = 'cleared';
-    finalMessage = currentRecipient.message;
-  } else {
-    gameState = 'cleared';
-    finalMessage = 'あけましておめでとうございます。今年もよろしくお願いします。';
+  function resolveToriiCollision() {
+    if (clearReady && totalAmount === currentRecipient.targetAmount) {
+      gameState = 'cleared';
+      finalMessage = currentRecipient.message;
+    } else {
+      gameState = 'gameover';
+      finalMessage = 'まだ目標額に届いていません！お年玉を集め直しましょう。';
+    }
   }
-}
 
 function updateItems() {
   if (gameState !== 'playing') return;
